@@ -1,3 +1,24 @@
+- semver: 0.1.2
+  date: 2026-11-10T10:04:05.63416433-08:00
+  packager: DigitalXero
+  changes:
+    - commit: 7fbf2bdbb6525989814ae07e69f4af9fab404234
+      note: 'fix: show destination test outcomes on the settings page'
+      author:
+        name: Dj Gilcrease
+        email: digitalxero@gmail.com
+      committer:
+        name: Dj Gilcrease
+        email: digitalxero@gmail.com
+      conventional_commit:
+        category: fix
+        scope: ""
+        description: show destination test outcomes on the settings page
+        body: ""
+        footer: []
+        major: false
+        minor: false
+        patch: true
 - semver: 0.1.1
   date: 2026-11-10T09:49:11.298009417-08:00
   packager: DigitalXero

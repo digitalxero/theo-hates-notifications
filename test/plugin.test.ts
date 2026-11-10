@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { inspect } from "node:util";
+import { createServer } from "node:http";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +16,10 @@ test("plugin owns a portable Extensions page, secrets are write-only, commands r
   const dir=await mkdtemp(join(tmpdir(),"notification-plugin-"));
   const scope=await Effect.runPromise(Scope.make());
   const secrets=new Map<string,string>();
+  let status=503;
+  const server=createServer(async (req,res) => { for await (const _ of req) {} res.writeHead(status).end(); });
+  await new Promise<void>(resolve => server.listen(0,"127.0.0.1",resolve));
+  const address=server.address();assert.ok(address&&typeof address!=="string");
   try {
     const contributions=await Effect.runPromise(plugin.activate({
       id:plugin.id,dataDirectory:dir,capabilities:["notification-journal","notification-routing","native-notification-delivery","notification-targets","settings-pages"],
@@ -37,6 +42,12 @@ test("plugin owns a portable Extensions page, secrets are write-only, commands r
     });
     await run("secret",{id:"test",endpoint:"https://fixture.invalid/hook?token=private-value"});
     assert.deepEqual(JSON.parse(secrets.get("destination-test")!),{url:"https://fixture.invalid/hook?token=private-value",headers:{}});
+    await run("secret",{id:"test",endpoint:`http://127.0.0.1:${address.port}/test`});
+    await run("test",{id:"test"});
+    assert.match(JSON.stringify(await Effect.runPromise(contributions.views![0]!.read())),/Test failed: HTTP 503/);
+    status=204;
+    await run("test",{id:"test"});
+    assert.match(JSON.stringify(await Effect.runPromise(contributions.views![0]!.read())),/Test delivered/);
     await run("advanced-routing",{id:"test",events:"notice",projects:"",providers:""});
     await run("client-notice",{id:"notice-1",title:"A notice",description:"private-notice-body"});
     assert.equal(JSON.parse(await readFile(join(dir,"routing.json"),"utf8")).deliveries.length,0);
@@ -53,5 +64,5 @@ test("plugin owns a portable Extensions page, secrets are write-only, commands r
     await run("client-routing",{enabled:false});
     assert.deepEqual(await Effect.runPromise(contributions.notificationRoutes!()),[]);
     await run("remove",{id:"test"});assert.equal(secrets.size,0);
-  } finally { await Effect.runPromise(Scope.close(scope,Exit.void));await rm(dir,{recursive:true,force:true}); }
+  } finally { await new Promise<void>(resolve => server.close(()=>resolve()));await Effect.runPromise(Scope.close(scope,Exit.void));await rm(dir,{recursive:true,force:true}); }
 });
