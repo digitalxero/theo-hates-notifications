@@ -1,3 +1,54 @@
+/*!
+Bundled third-party software
+
+Effect 4.1.2 — https://github.com/Effect-TS/effect
+
+MIT License
+
+Copyright (c) 2023 Effectful Technologies Inc
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+T3 Tools public plugin SDK — see vendor/plugin-sdk/PROVENANCE.md
+
+MIT License
+
+Copyright (c) 2026 T3 Tools Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
 import { mkdir, open, readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -16233,7 +16284,7 @@ var plugin_default = {
 	apiVersion: 1,
 	id: "theo-hates-notifications",
 	name: "theo-hates-notifications",
-	version: "0.1.0",
+	version: "0.1.1",
 	description: "Explicit notification routing to Slack, ntfy, webhooks, Discord and Gotify.",
 	activate: (context) => gen(function* () {
 		if (![
@@ -16382,10 +16433,16 @@ var plugin_default = {
 						operation: "unknown-destination",
 						cause: null
 					});
-					const value = yield* call("endpoint", async () => endpointConfiguration(JSON.stringify({
-						url: String(input.endpoint),
-						headers: typeof input.headers === "string" && input.headers.trim() ? JSON.parse(input.headers) : {}
-					})));
+					const value = yield* call("endpoint", async () => {
+						try {
+							return endpointConfiguration(JSON.stringify({
+								url: String(input.endpoint),
+								headers: typeof input.headers === "string" && input.headers.trim() ? JSON.parse(input.headers) : {}
+							}));
+						} catch {
+							throw new Error("Enter a valid HTTP(S) endpoint and a JSON object of headers.");
+						}
+					});
 					yield* context.secrets.set(`destination-${id}`, JSON.stringify(value));
 					return "Endpoint saved. The secret is never displayed.";
 				})),

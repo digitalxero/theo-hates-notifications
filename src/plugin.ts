@@ -74,7 +74,7 @@ export default {
   apiVersion: 1,
   id: "theo-hates-notifications",
   name: "theo-hates-notifications",
-  version: "0.1.0",
+  version: "0.1.1",
   description: "Explicit notification routing to Slack, ntfy, webhooks, Discord and Gotify.",
   activate: (context: PluginContext) => Effect.gen(function* () {
     if (!["notification-journal", "notification-routing", "native-notification-delivery", "notification-targets", "settings-pages"].every(capability => context.capabilities?.includes(capability)) || !context.notifications) return yield* new PluginError({ operation: "notification-host-required", cause: null });
@@ -141,7 +141,13 @@ export default {
         command("secret", "Save destination endpoint secret", input => Effect.gen(function* () {
           const id = String(input.id);
           if (!engine.state().destinations.some(d => d.id === id)) return yield* new PluginError({ operation: "unknown-destination", cause: null });
-          const value = yield* call("endpoint", async () => endpointConfiguration(JSON.stringify({ url: String(input.endpoint), headers: typeof input.headers === "string" && input.headers.trim() ? JSON.parse(input.headers) : {} })));
+          const value = yield* call("endpoint", async () => {
+            try {
+              return endpointConfiguration(JSON.stringify({ url: String(input.endpoint), headers: typeof input.headers === "string" && input.headers.trim() ? JSON.parse(input.headers) : {} }));
+            } catch {
+              throw new Error("Enter a valid HTTP(S) endpoint and a JSON object of headers.");
+            }
+          });
           yield* context.secrets.set(`destination-${id}`, JSON.stringify(value));
           return "Endpoint saved. The secret is never displayed.";
         })),
