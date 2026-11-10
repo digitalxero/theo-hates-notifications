@@ -16289,7 +16289,7 @@ var plugin_default = {
 	apiVersion: 1,
 	id: "theo-hates-notifications",
 	name: "theo-hates-notifications",
-	version: "0.1.1",
+	version: "0.1.2",
 	description: "Explicit notification routing to Slack, ntfy, webhooks, Discord and Gotify.",
 	activate: (context) => gen(function* () {
 		if (![

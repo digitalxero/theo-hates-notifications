@@ -75,7 +75,7 @@ export default {
   apiVersion: 1,
   id: "theo-hates-notifications",
   name: "theo-hates-notifications",
-  version: "0.1.1",
+  version: "0.1.2",
   description: "Explicit notification routing to Slack, ntfy, webhooks, Discord and Gotify.",
   activate: (context: PluginContext) => Effect.gen(function* () {
     if (!["notification-journal", "notification-routing", "native-notification-delivery", "notification-targets", "settings-pages"].every(capability => context.capabilities?.includes(capability)) || !context.notifications) return yield* new PluginError({ operation: "notification-host-required", cause: null });
