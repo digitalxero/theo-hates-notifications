@@ -2,7 +2,7 @@
 
 Route T3 Code alerts to Slack incoming webhooks, ntfy, JSON webhooks, Discord, Gotify, in-app toasts, system notifications, sound, and T3's existing mobile delivery adapter. Each environment owns its routing, queue, and secrets.
 
-Requires the shared [plugin-host PoC](https://github.com/djgilcrease/t3code/tree/t3/create-plugin-system), including `notification-journal`, `notification-routing`, `notification-targets`, `native-notification-delivery`, and `settings-pages`. Stock T3 Code cannot install this plugin. The release notes pin the verified host commit and include a source/verification parity inventory.
+Requires the shared [plugin-host PoC](https://github.com/djgilcrease/t3code/tree/t3/create-plugin-system), including `notification-journal`, `notification-routing`, `notification-targets`, `native-notification-delivery`, and `settings-pages`. Use host commit `fbbbb2b7266732c9d1ab94f4a45422be2458f642` or a compatible descendant. Stock T3 Code cannot install this plugin. The release notes pin the verified host commit and include a source/verification parity inventory.
 
 ## Install and configure
 
