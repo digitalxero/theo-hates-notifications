@@ -1,4 +1,10 @@
 
+0.1.1
+=============
+2026-11-10
+
+* fix: retain third-party attribution in every prebuilt bundle (fcafa7ca)
+
 0.1.0
 =============
 2026-11-10

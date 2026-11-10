@@ -1,3 +1,24 @@
+- semver: 0.1.1
+  date: 2026-11-10T09:42:44.392906862-08:00
+  packager: DigitalXero
+  changes:
+    - commit: fcafa7caec56fa92c6ad61064ea9368f161fb2c6
+      note: 'fix: retain third-party attribution in every prebuilt bundle'
+      author:
+        name: Dj Gilcrease
+        email: digitalxero@gmail.com
+      committer:
+        name: Dj Gilcrease
+        email: digitalxero@gmail.com
+      conventional_commit:
+        category: fix
+        scope: ""
+        description: retain third-party attribution in every prebuilt bundle
+        body: ""
+        footer: []
+        major: false
+        minor: false
+        patch: true
 - semver: 0.1.0
   date: 2026-11-10T09:12:06.370443002-08:00
   packager: DigitalXero
