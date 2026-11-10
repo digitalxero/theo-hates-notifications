@@ -8,13 +8,14 @@ import { createEngine, kinds, defaultKinds, transports, endpointConfiguration, t
 
 const call = <A>(operation: string, run: (signal: AbortSignal) => Promise<A>) =>
   Effect.tryPromise({ try: run, catch: (cause) => new PluginError({ operation, cause }) });
-function view(engine: Engine, failure: string | null, targets: PluginNotificationTargets): PluginView {
+function view(engine: Engine, failure: string | null, targets: PluginNotificationTargets, lastTest: string): PluginView {
   const state = engine.state();
   return {
     title: "Theo Hates Notifications",
     blocks: [
       { id: "intro", kind: "text", text: "Choose where alerts go. Builtin notifications keep working until you explicitly configure client routing. Endpoint URLs stay in this environment's secrets." },
       { id: "status", kind: "text", text: failure ?? `${state.deliveries.filter(d => d.status === "pending").length} queued, ${state.deliveries.filter(d => d.status === "failed").length} failed. Delivery retries up to five times; failed rows can be retried manually.${targets.truncated ? " Some filter choices are omitted; use Advanced routing for other IDs." : ""}` },
+      { id: "test-result", kind: "text", text: lastTest },
       { id: "destinations", kind: "table", columns: ["Id", "Name", "Transport", "Events", "Projects", "Providers", "Enabled"], rows: state.destinations.map(d => ({ id: d.id, cells: [d.id,d.name,d.transport,d.events.join(", "),d.projects.map(id => targets.projects.find(p => p.id === id)?.label ?? id).join(", ") || "All",d.providers.map(id => targets.providers.find(p => p.id === id)?.label ?? id).join(", ") || "All",String(d.enabled)], actions: [
         { id: "test", label: "Send test", command: "test", input: { id: d.id } },
         { id: "toggle", label: d.enabled ? "Pause" : "Resume", command: "configure", input: { ...d, enabled: !d.enabled } },
@@ -87,6 +88,7 @@ export default {
       yield* call("baseline", () => engine.ingest(baseline));
     }
     let failure: string | null = null;
+    let lastTest = "Send test checks one destination immediately. Test results appear here; tests are not automatically retried.";
     const tick = Effect.gen(function* () {
       const previous = engine.state();
       const batch = yield* notifications.read({ after: engine.state().cursor });
@@ -112,7 +114,7 @@ export default {
         }
         return routes;
       }),
-      views: [{ id: "settings", title: "Theo Hates Notifications", location: "settings-page" as const, permission: "settings:write" as const, read: () => notifications.targets.pipe(Effect.map(targets => view(engine, failure, targets))) }],
+      views: [{ id: "settings", title: "Theo Hates Notifications", location: "settings-page" as const, permission: "settings:write" as const, read: () => notifications.targets.pipe(Effect.map(targets => view(engine, failure, targets, lastTest))) }],
       commands: [
         command("notice-routing", "Configure explicit notice forwarding", input => call("notice-routing", async () => { await engine.configureNotices(input.enabled === true, input.details === true); return "Notice forwarding saved. Interactive and progress notices retain their in-app actions."; })),
         command("client-notice", "Queue a client-origin notice", input => call("client-notice", async () => {
@@ -151,7 +153,12 @@ export default {
           yield* context.secrets.set(`destination-${id}`, JSON.stringify(value));
           return "Endpoint saved. The secret is never displayed.";
         })),
-        command("test", "Send a synthetic destination test", input => call("test", signal => engine.test(String(input.id), signal))),
+        command("test", "Send a synthetic destination test", input => call("test", async signal => {
+          const id = String(input.id);
+          const result = await engine.test(id, signal);
+          lastTest = `${engine.state().destinations.find(d => d.id === id)?.name ?? "Destination"}: ${result}`;
+          return result;
+        })),
         command("retry", "Retry failed delivery", input => call("retry", async () => { await engine.retry(String(input.id)); return "Delivery queued."; })),
         command("remove", "Remove destination and discard pending deliveries", input => Effect.gen(function* () {
           const id = String(input.id);

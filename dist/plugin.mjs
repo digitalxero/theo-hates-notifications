@@ -15930,7 +15930,7 @@ const call = (operation, run) => tryPromise({
 		cause
 	})
 });
-function view(engine, failure, targets) {
+function view(engine, failure, targets, lastTest) {
 	const state = engine.state();
 	return {
 		title: "Theo Hates Notifications",
@@ -15944,6 +15944,11 @@ function view(engine, failure, targets) {
 				id: "status",
 				kind: "text",
 				text: failure ?? `${state.deliveries.filter((d) => d.status === "pending").length} queued, ${state.deliveries.filter((d) => d.status === "failed").length} failed. Delivery retries up to five times; failed rows can be retried manually.${targets.truncated ? " Some filter choices are omitted; use Advanced routing for other IDs." : ""}`
+			},
+			{
+				id: "test-result",
+				kind: "text",
+				text: lastTest
 			},
 			{
 				id: "destinations",
@@ -16310,6 +16315,7 @@ var plugin_default = {
 			yield* call("baseline", () => engine.ingest(baseline));
 		}
 		let failure = null;
+		let lastTest = "Send test checks one destination immediately. Test results appear here; tests are not automatically retried.";
 		yield* gen(function* () {
 			const previous = engine.state();
 			const batch = yield* notifications.read({ after: engine.state().cursor });
@@ -16362,7 +16368,7 @@ var plugin_default = {
 				title: "Theo Hates Notifications",
 				location: "settings-page",
 				permission: "settings:write",
-				read: () => notifications.targets.pipe(map((targets) => view(engine, failure, targets)))
+				read: () => notifications.targets.pipe(map((targets) => view(engine, failure, targets, lastTest)))
 			}],
 			commands: [
 				command("notice-routing", "Configure explicit notice forwarding", (input) => call("notice-routing", async () => {
@@ -16446,7 +16452,12 @@ var plugin_default = {
 					yield* context.secrets.set(`destination-${id}`, JSON.stringify(value));
 					return "Endpoint saved. The secret is never displayed.";
 				})),
-				command("test", "Send a synthetic destination test", (input) => call("test", (signal) => engine.test(String(input.id), signal))),
+				command("test", "Send a synthetic destination test", (input) => call("test", async (signal) => {
+					const id = String(input.id);
+					const result = await engine.test(id, signal);
+					lastTest = `${engine.state().destinations.find((d) => d.id === id)?.name ?? "Destination"}: ${result}`;
+					return result;
+				})),
 				command("retry", "Retry failed delivery", (input) => call("retry", async () => {
 					await engine.retry(String(input.id));
 					return "Delivery queued.";
