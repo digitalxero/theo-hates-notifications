@@ -136,3 +136,18 @@ test("header credentials stay in the secret boundary, notice forwarding is expli
     assert.equal((await readFile(join(dir,"routing.json"),"utf8")).includes("private-value"),false);
   } finally { await rm(dir,{recursive:true,force:true}); }
 });
+
+test("interrupted delivery reserves an attempt and reuses its durable id after restart", async () => {
+  const dir=await mkdtemp(join(tmpdir(),"notification-interrupt-"));
+  const controller=new AbortController();
+  let clock=0;
+  const keys:string[]=[];
+  const deps={now:()=>clock,secret:async()=>"http://fixture.invalid",fetch:(async(_url,init)=>{keys.push(new Headers(init?.headers).get("Idempotency-Key")!);controller.abort();return new Response(null,{status:204});}) as typeof fetch};
+  try {
+    let engine=await createEngine(dir,deps);
+    await engine.configure(route); await engine.ingest({cursor:1,events:[event]}); await engine.drain(controller.signal);
+    assert.equal(engine.state().deliveries[0]!.attempts,1);assert.equal(engine.state().deliveries[0]!.status,"pending");
+    clock=10000; engine=await createEngine(dir,{...deps,fetch:(async(_url,init)=>{keys.push(new Headers(init?.headers).get("Idempotency-Key")!);return new Response(null,{status:204});}) as typeof fetch});
+    await engine.drain(); assert.equal(engine.state().deliveries[0]!.status,"delivered");assert.equal(engine.state().deliveries[0]!.attempts,2);assert.equal(keys[0],keys[1]);
+  } finally { await rm(dir,{recursive:true,force:true}); }
+});

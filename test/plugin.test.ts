@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
@@ -28,6 +28,15 @@ test("plugin owns a portable Extensions page, secrets are write-only, commands r
     await run("configure",{id:"test",name:"Test",transport:"webhook",events:"completion,approval",projects:"",providers:"",enabled:true});
     await run("secret",{id:"test",endpoint:"https://fixture.invalid/hook?token=private-value"});
     assert.deepEqual(JSON.parse(secrets.get("destination-test")!),{url:"https://fixture.invalid/hook?token=private-value",headers:{}});
+    await run("advanced-routing",{id:"test",events:"notice",projects:"",providers:""});
+    await run("client-notice",{id:"notice-1",title:"A notice",description:"private-notice-body"});
+    assert.equal(JSON.parse(await readFile(join(dir,"routing.json"),"utf8")).deliveries.length,0);
+    await run("notice-routing",{enabled:true,details:false});
+    await run("client-notice",{id:"notice-1",title:"A notice",description:"private-notice-body"});
+    const routing=await readFile(join(dir,"routing.json"),"utf8");
+    assert.equal(routing.includes("private-notice-body"),false);
+    assert.equal(JSON.parse(routing).deliveries.length,1);
+    await run("notice-routing",{enabled:false,details:false});
     const view=Schema.decodeUnknownSync(PluginView)(await Effect.runPromise(contributions.views![0]!.read()));
     assert.equal(JSON.stringify(view).includes("private-value"),false);
     await run("client-routing",{enabled:true,"in-app":true,mode:"sound",events:"completion",projects:"",providers:""});
