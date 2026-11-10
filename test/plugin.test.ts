@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { inspect } from "node:util";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +27,14 @@ test("plugin owns a portable Extensions page, secrets are write-only, commands r
     for(const c of contributions.commands!) { assert.equal(c.permission,"settings:write");assert.equal(c.agent,false); }
     const run=async(id:string,input:Record<string,Schema.Json>)=>Effect.runPromise(contributions.commands!.find(c=>c.id===id)!.run(input));
     await run("configure",{id:"test",name:"Test",transport:"webhook",events:"completion,approval",projects:"",providers:"",enabled:true});
+    await assert.rejects(run("secret",{id:"test",endpoint:"private-invalid-endpoint"}), error => {
+      assert.equal(inspect(error,{depth:8}).includes("private-invalid-endpoint"),false);
+      return true;
+    });
+    await assert.rejects(run("secret",{id:"test",endpoint:"https://fixture.invalid",headers:'{"Authorization":"private-header-fragment"'}), error => {
+      assert.equal(inspect(error,{depth:8}).includes("private-header-fragment"),false);
+      return true;
+    });
     await run("secret",{id:"test",endpoint:"https://fixture.invalid/hook?token=private-value"});
     assert.deepEqual(JSON.parse(secrets.get("destination-test")!),{url:"https://fixture.invalid/hook?token=private-value",headers:{}});
     await run("advanced-routing",{id:"test",events:"notice",projects:"",providers:""});

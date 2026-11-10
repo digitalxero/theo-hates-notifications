@@ -16433,10 +16433,16 @@ var plugin_default = {
 						operation: "unknown-destination",
 						cause: null
 					});
-					const value = yield* call("endpoint", async () => endpointConfiguration(JSON.stringify({
-						url: String(input.endpoint),
-						headers: typeof input.headers === "string" && input.headers.trim() ? JSON.parse(input.headers) : {}
-					})));
+					const value = yield* call("endpoint", async () => {
+						try {
+							return endpointConfiguration(JSON.stringify({
+								url: String(input.endpoint),
+								headers: typeof input.headers === "string" && input.headers.trim() ? JSON.parse(input.headers) : {}
+							}));
+						} catch {
+							throw new Error("Enter a valid HTTP(S) endpoint and a JSON object of headers.");
+						}
+					});
 					yield* context.secrets.set(`destination-${id}`, JSON.stringify(value));
 					return "Endpoint saved. The secret is never displayed.";
 				})),
