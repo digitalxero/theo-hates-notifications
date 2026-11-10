@@ -66,7 +66,29 @@ export const PluginField = Schema.Struct({
   ),
   required: Schema.optionalKey(Schema.Boolean),
 });
+export const PluginManagedEnvironment = Schema.Struct({
+  id: PluginLocalId,
+  kind: Schema.Literal("environment"),
+  environmentId: Label,
+  label: Label,
+  url: Text,
+  state: Schema.Literals([
+    "starting",
+    "running",
+    "stopping",
+    "stopped",
+    "deleting",
+    "deleted",
+    "error",
+  ]),
+  connect: PluginAction,
+  threadId: Schema.optionalKey(Label),
+  launchRequestId: Schema.optionalKey(Label),
+});
+export type PluginManagedEnvironment = typeof PluginManagedEnvironment.Type;
+
 export const PluginBlock = Schema.Union([
+  PluginManagedEnvironment,
   Schema.Struct({ id: PluginLocalId, kind: Schema.Literal("text"), text: Text }),
   Schema.Struct({ id: PluginLocalId, kind: Schema.Literal("link"), label: Label, url: Text }),
   Schema.Struct({
@@ -141,7 +163,14 @@ export type PluginView = typeof PluginView.Type;
 export const PluginViewDescriptor = Schema.Struct({
   id: PluginLocalId,
   title: Label,
-  location: Schema.Literals(["settings", "settings-page", "usage", "thread-details"]),
+  location: Schema.Literals([
+    "settings",
+    "settings-page",
+    "usage",
+    "thread-details",
+    "managed-environments",
+    "environment-launcher",
+  ]),
   permission: PluginPermission,
 });
 export type PluginViewDescriptor = typeof PluginViewDescriptor.Type;
@@ -162,6 +191,12 @@ export const PluginSecretResult = Schema.Struct({
   value: Text,
 });
 export type PluginSecretResult = typeof PluginSecretResult.Type;
+
+export const PluginEnvironmentLaunchResult = Schema.Struct({
+  $t3: Schema.Literal("environment-launch"),
+  requestId: Label,
+});
+export type PluginEnvironmentLaunchResult = typeof PluginEnvironmentLaunchResult.Type;
 
 /** Ends a `thread-details` action with a message, and optionally a thread to open. */
 export const PluginNoticeResult = Schema.Struct({
@@ -255,6 +290,11 @@ export const PluginActivity = Schema.Struct({
   waiting: Schema.Boolean,
   closed: Schema.Boolean,
   lastActivity: Schema.Number,
+  threads: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ threadId: Label, subagent: Schema.Boolean })).check(
+      Schema.isMaxLength(10_000),
+    ),
+  ),
 });
 export type PluginActivity = typeof PluginActivity.Type;
 export const PluginThreadSummary = Schema.Struct({
@@ -365,19 +405,26 @@ export const PluginNotificationKind = Schema.Literals([
   "failure",
   "usage-limit",
   "guest-request",
+  "activity",
+  "clear",
+  "notice",
+  "review-ready",
+  "review-failure",
 ]);
 export type PluginNotificationKind = typeof PluginNotificationKind.Type;
 export const PluginNotification = Schema.Struct({
   id: Label,
   sequence: Schema.Int,
   kind: PluginNotificationKind,
-  threadId: Label,
-  sourceThreadId: Schema.optionalKey(Label),
-  targetEnvironmentId: Schema.optionalKey(Label),
-  projectId: Label,
+  threadId: Schema.String,
+  sourceThreadId: Schema.optionalKey(Schema.String),
+  targetEnvironmentId: Schema.optionalKey(Schema.String),
+  projectId: Schema.String,
   provider: Label,
   title: Label,
   occurredAt: Schema.String,
+  description: Schema.optionalKey(Text),
+  path: Schema.optionalKey(Text),
 });
 export type PluginNotification = typeof PluginNotification.Type;
 export const PluginNotificationRead = Schema.Struct({
@@ -393,10 +440,12 @@ export type PluginNotificationBatch = typeof PluginNotificationBatch.Type;
 export const PluginNotificationRoute = Schema.Struct({
   id: PluginLocalId,
   events: Schema.Array(PluginNotificationKind).check(Schema.isMaxLength(20)),
-  projects: Schema.Array(Label).check(Schema.isMaxLength(100)),
-  providers: Schema.Array(Label).check(Schema.isMaxLength(100)),
+  projects: Schema.Array(Schema.String).check(Schema.isMaxLength(100)),
+  providers: Schema.Array(Schema.String).check(Schema.isMaxLength(100)),
   inApp: Schema.Boolean,
-  mode: Schema.Literals(["off", "notifications", "sound", "notifications-and-sound"]),
+  mode: Schema.Literals(["inherit", "off", "notifications", "sound", "notifications-and-sound"]),
+  forwardCommand: Schema.optionalKey(PluginLocalId),
+  includeDescription: Schema.optionalKey(Schema.Boolean),
 });
 export type PluginNotificationRoute = typeof PluginNotificationRoute.Type;
 export const PluginNotificationRoutes = Schema.Array(PluginNotificationRoute).check(
@@ -404,9 +453,23 @@ export const PluginNotificationRoutes = Schema.Array(PluginNotificationRoute).ch
 );
 export type PluginNotificationRoutes = typeof PluginNotificationRoutes.Type;
 
+export const PluginNotificationTargets = Schema.Struct({
+  projects: Schema.Array(Schema.Struct({ id: Schema.String, label: Label })).check(
+    Schema.isMaxLength(99),
+  ),
+  providers: Schema.Array(Schema.Struct({ id: Schema.String, label: Label })).check(
+    Schema.isMaxLength(99),
+  ),
+  truncated: Schema.Boolean,
+});
+export type PluginNotificationTargets = typeof PluginNotificationTargets.Type;
+
 export interface PluginContext {
   /** Null starts at the current tail; persist the returned cursor with the delivery outbox. */
   readonly notifications?: {
+    readonly targets: Effect.Effect<PluginNotificationTargets, PluginError>;
+    /** Refresh the owning environment's native/mobile presentation from committed state. */
+    readonly refreshNative: (threadId: string) => Effect.Effect<void, PluginError>;
     readonly read: (
       input: PluginNotificationRead,
     ) => Effect.Effect<PluginNotificationBatch, PluginError>;
@@ -470,7 +533,7 @@ export interface PluginContributions {
     readonly run: (input: PluginInput) => Effect.Effect<Schema.Json, PluginError>;
   })[];
   readonly views?: readonly (PluginViewDescriptor & {
-    readonly read: () => Effect.Effect<PluginView, PluginError>;
+    readonly read: (input?: PluginInput) => Effect.Effect<PluginView, PluginError>;
   })[];
   readonly mcpServers?: (context: PluginMcpContext) => Effect.Effect<PluginMcpServers, PluginError>;
   readonly prepareLaunch?: (launch: PluginLaunch) => Effect.Effect<PluginLaunch, PluginError>;

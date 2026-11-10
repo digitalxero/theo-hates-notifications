@@ -51,7 +51,39 @@ export declare const PluginField: Schema.Struct<{
     }>>>;
     readonly required: Schema.optionalKey<Schema.Boolean>;
 }>;
+export declare const PluginManagedEnvironment: Schema.Struct<{
+    readonly id: Schema.String;
+    readonly kind: Schema.Literal<"environment">;
+    readonly environmentId: Schema.String;
+    readonly label: Schema.String;
+    readonly url: Schema.String;
+    readonly state: Schema.Literals<readonly ["starting", "running", "stopping", "stopped", "deleting", "deleted", "error"]>;
+    readonly connect: Schema.Struct<{
+        readonly id: Schema.String;
+        readonly label: Schema.String;
+        readonly command: Schema.String;
+        readonly input: Schema.$Record<Schema.String, Schema.Codec<Schema.Json, Schema.Json, never, never>>;
+    }>;
+    readonly threadId: Schema.optionalKey<Schema.String>;
+    readonly launchRequestId: Schema.optionalKey<Schema.String>;
+}>;
+export type PluginManagedEnvironment = typeof PluginManagedEnvironment.Type;
 export declare const PluginBlock: Schema.Union<readonly [Schema.Struct<{
+    readonly id: Schema.String;
+    readonly kind: Schema.Literal<"environment">;
+    readonly environmentId: Schema.String;
+    readonly label: Schema.String;
+    readonly url: Schema.String;
+    readonly state: Schema.Literals<readonly ["starting", "running", "stopping", "stopped", "deleting", "deleted", "error"]>;
+    readonly connect: Schema.Struct<{
+        readonly id: Schema.String;
+        readonly label: Schema.String;
+        readonly command: Schema.String;
+        readonly input: Schema.$Record<Schema.String, Schema.Codec<Schema.Json, Schema.Json, never, never>>;
+    }>;
+    readonly threadId: Schema.optionalKey<Schema.String>;
+    readonly launchRequestId: Schema.optionalKey<Schema.String>;
+}>, Schema.Struct<{
     readonly id: Schema.String;
     readonly kind: Schema.Literal<"text">;
     readonly text: Schema.String;
@@ -126,6 +158,21 @@ export declare const PluginView: Schema.Struct<{
     readonly title: Schema.String;
     readonly blocks: Schema.$Array<Schema.Union<readonly [Schema.Struct<{
         readonly id: Schema.String;
+        readonly kind: Schema.Literal<"environment">;
+        readonly environmentId: Schema.String;
+        readonly label: Schema.String;
+        readonly url: Schema.String;
+        readonly state: Schema.Literals<readonly ["starting", "running", "stopping", "stopped", "deleting", "deleted", "error"]>;
+        readonly connect: Schema.Struct<{
+            readonly id: Schema.String;
+            readonly label: Schema.String;
+            readonly command: Schema.String;
+            readonly input: Schema.$Record<Schema.String, Schema.Codec<Schema.Json, Schema.Json, never, never>>;
+        }>;
+        readonly threadId: Schema.optionalKey<Schema.String>;
+        readonly launchRequestId: Schema.optionalKey<Schema.String>;
+    }>, Schema.Struct<{
+        readonly id: Schema.String;
         readonly kind: Schema.Literal<"text">;
         readonly text: Schema.String;
     }>, Schema.Struct<{
@@ -199,7 +246,7 @@ export type PluginView = typeof PluginView.Type;
 export declare const PluginViewDescriptor: Schema.Struct<{
     readonly id: Schema.String;
     readonly title: Schema.String;
-    readonly location: Schema.Literals<readonly ["settings", "settings-page", "usage", "thread-details"]>;
+    readonly location: Schema.Literals<readonly ["settings", "settings-page", "usage", "thread-details", "managed-environments", "environment-launcher"]>;
     readonly permission: Schema.Literals<readonly ["orchestration:read", "orchestration:operate", "settings:write", "providers:manage", "environment:maintain", "diagnostics:read", "filesystem:read", "filesystem:write", "terminal:read", "terminal:operate", "source-control:write", "review:write", "access:read", "access:write", "relay:read", "relay:write", "preview:operate"]>;
 }>;
 export type PluginViewDescriptor = typeof PluginViewDescriptor.Type;
@@ -219,6 +266,11 @@ export declare const PluginSecretResult: Schema.Struct<{
     readonly value: Schema.String;
 }>;
 export type PluginSecretResult = typeof PluginSecretResult.Type;
+export declare const PluginEnvironmentLaunchResult: Schema.Struct<{
+    readonly $t3: Schema.Literal<"environment-launch">;
+    readonly requestId: Schema.String;
+}>;
+export type PluginEnvironmentLaunchResult = typeof PluginEnvironmentLaunchResult.Type;
 /** Ends a `thread-details` action with a message, and optionally a thread to open. */
 export declare const PluginNoticeResult: Schema.Struct<{
     readonly $t3: Schema.Literal<"notice">;
@@ -311,6 +363,10 @@ export declare const PluginActivity: Schema.Struct<{
     readonly waiting: Schema.Boolean;
     readonly closed: Schema.Boolean;
     readonly lastActivity: Schema.Number;
+    readonly threads: Schema.optionalKey<Schema.$Array<Schema.Struct<{
+        readonly threadId: Schema.String;
+        readonly subagent: Schema.Boolean;
+    }>>>;
 }>;
 export type PluginActivity = typeof PluginActivity.Type;
 export declare const PluginThreadSummary: Schema.Struct<{
@@ -418,12 +474,12 @@ export interface PluginPeers {
     readonly list: () => Effect.Effect<readonly PluginPeer[], PluginError>;
     readonly run: (call: PluginPeerCall) => Effect.Effect<Schema.Json, PluginError>;
 }
-export declare const PluginNotificationKind: Schema.Literals<readonly ["completion", "input", "approval", "failure", "usage-limit", "guest-request"]>;
+export declare const PluginNotificationKind: Schema.Literals<readonly ["completion", "input", "approval", "failure", "usage-limit", "guest-request", "activity", "clear", "notice", "review-ready", "review-failure"]>;
 export type PluginNotificationKind = typeof PluginNotificationKind.Type;
 export declare const PluginNotification: Schema.Struct<{
     readonly id: Schema.String;
     readonly sequence: Schema.Int;
-    readonly kind: Schema.Literals<readonly ["completion", "input", "approval", "failure", "usage-limit", "guest-request"]>;
+    readonly kind: Schema.Literals<readonly ["completion", "input", "approval", "failure", "usage-limit", "guest-request", "activity", "clear", "notice", "review-ready", "review-failure"]>;
     readonly threadId: Schema.String;
     readonly sourceThreadId: Schema.optionalKey<Schema.String>;
     readonly targetEnvironmentId: Schema.optionalKey<Schema.String>;
@@ -431,6 +487,8 @@ export declare const PluginNotification: Schema.Struct<{
     readonly provider: Schema.String;
     readonly title: Schema.String;
     readonly occurredAt: Schema.String;
+    readonly description: Schema.optionalKey<Schema.String>;
+    readonly path: Schema.optionalKey<Schema.String>;
 }>;
 export type PluginNotification = typeof PluginNotification.Type;
 export declare const PluginNotificationRead: Schema.Struct<{
@@ -442,7 +500,7 @@ export declare const PluginNotificationBatch: Schema.Struct<{
     readonly events: Schema.$Array<Schema.Struct<{
         readonly id: Schema.String;
         readonly sequence: Schema.Int;
-        readonly kind: Schema.Literals<readonly ["completion", "input", "approval", "failure", "usage-limit", "guest-request"]>;
+        readonly kind: Schema.Literals<readonly ["completion", "input", "approval", "failure", "usage-limit", "guest-request", "activity", "clear", "notice", "review-ready", "review-failure"]>;
         readonly threadId: Schema.String;
         readonly sourceThreadId: Schema.optionalKey<Schema.String>;
         readonly targetEnvironmentId: Schema.optionalKey<Schema.String>;
@@ -450,30 +508,51 @@ export declare const PluginNotificationBatch: Schema.Struct<{
         readonly provider: Schema.String;
         readonly title: Schema.String;
         readonly occurredAt: Schema.String;
+        readonly description: Schema.optionalKey<Schema.String>;
+        readonly path: Schema.optionalKey<Schema.String>;
     }>>;
 }>;
 export type PluginNotificationBatch = typeof PluginNotificationBatch.Type;
 export declare const PluginNotificationRoute: Schema.Struct<{
     readonly id: Schema.String;
-    readonly events: Schema.$Array<Schema.Literals<readonly ["completion", "input", "approval", "failure", "usage-limit", "guest-request"]>>;
+    readonly events: Schema.$Array<Schema.Literals<readonly ["completion", "input", "approval", "failure", "usage-limit", "guest-request", "activity", "clear", "notice", "review-ready", "review-failure"]>>;
     readonly projects: Schema.$Array<Schema.String>;
     readonly providers: Schema.$Array<Schema.String>;
     readonly inApp: Schema.Boolean;
-    readonly mode: Schema.Literals<readonly ["off", "notifications", "sound", "notifications-and-sound"]>;
+    readonly mode: Schema.Literals<readonly ["inherit", "off", "notifications", "sound", "notifications-and-sound"]>;
+    readonly forwardCommand: Schema.optionalKey<Schema.String>;
+    readonly includeDescription: Schema.optionalKey<Schema.Boolean>;
 }>;
 export type PluginNotificationRoute = typeof PluginNotificationRoute.Type;
 export declare const PluginNotificationRoutes: Schema.$Array<Schema.Struct<{
     readonly id: Schema.String;
-    readonly events: Schema.$Array<Schema.Literals<readonly ["completion", "input", "approval", "failure", "usage-limit", "guest-request"]>>;
+    readonly events: Schema.$Array<Schema.Literals<readonly ["completion", "input", "approval", "failure", "usage-limit", "guest-request", "activity", "clear", "notice", "review-ready", "review-failure"]>>;
     readonly projects: Schema.$Array<Schema.String>;
     readonly providers: Schema.$Array<Schema.String>;
     readonly inApp: Schema.Boolean;
-    readonly mode: Schema.Literals<readonly ["off", "notifications", "sound", "notifications-and-sound"]>;
+    readonly mode: Schema.Literals<readonly ["inherit", "off", "notifications", "sound", "notifications-and-sound"]>;
+    readonly forwardCommand: Schema.optionalKey<Schema.String>;
+    readonly includeDescription: Schema.optionalKey<Schema.Boolean>;
 }>>;
 export type PluginNotificationRoutes = typeof PluginNotificationRoutes.Type;
+export declare const PluginNotificationTargets: Schema.Struct<{
+    readonly projects: Schema.$Array<Schema.Struct<{
+        readonly id: Schema.String;
+        readonly label: Schema.String;
+    }>>;
+    readonly providers: Schema.$Array<Schema.Struct<{
+        readonly id: Schema.String;
+        readonly label: Schema.String;
+    }>>;
+    readonly truncated: Schema.Boolean;
+}>;
+export type PluginNotificationTargets = typeof PluginNotificationTargets.Type;
 export interface PluginContext {
     /** Null starts at the current tail; persist the returned cursor with the delivery outbox. */
     readonly notifications?: {
+        readonly targets: Effect.Effect<PluginNotificationTargets, PluginError>;
+        /** Refresh the owning environment's native/mobile presentation from committed state. */
+        readonly refreshNative: (threadId: string) => Effect.Effect<void, PluginError>;
         readonly read: (input: PluginNotificationRead) => Effect.Effect<PluginNotificationBatch, PluginError>;
     };
     /** Committed thread activity, including background work; connection presence is excluded. */
@@ -528,7 +607,7 @@ export interface PluginContributions {
         readonly run: (input: PluginInput) => Effect.Effect<Schema.Json, PluginError>;
     })[];
     readonly views?: readonly (PluginViewDescriptor & {
-        readonly read: () => Effect.Effect<PluginView, PluginError>;
+        readonly read: (input?: PluginInput) => Effect.Effect<PluginView, PluginError>;
     })[];
     readonly mcpServers?: (context: PluginMcpContext) => Effect.Effect<PluginMcpServers, PluginError>;
     readonly prepareLaunch?: (launch: PluginLaunch) => Effect.Effect<PluginLaunch, PluginError>;

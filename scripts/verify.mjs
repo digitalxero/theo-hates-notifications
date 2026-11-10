@@ -21,10 +21,10 @@ try {
       .activate({
         id: plugin.id,
         dataDirectory: directory,
-        capabilities: ["settings-pages", "notification-journal", "notification-routing"],
+        capabilities: ["settings-pages", "notification-journal", "notification-routing", "native-notification-delivery", "notification-targets"],
         httpBasePath: "/unused",
         httpBaseUrl: Effect.succeed("http://unused.invalid"),
-        notifications: { read: () => Effect.succeed({ cursor: 0, events: [] }) },
+        notifications: { targets: Effect.succeed({ projects: [], providers: [], truncated: false }), refreshNative: () => Effect.void, read: () => Effect.succeed({ cursor: 0, events: [] }) },
         runProcess: () =>
           Effect.die("No process should be needed for activation or the settings view"),
         secrets: {

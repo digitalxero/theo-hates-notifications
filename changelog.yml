@@ -1,0 +1,38 @@
+- semver: 0.1.0
+  date: 2026-11-10T09:12:06.370443002-08:00
+  packager: DigitalXero
+  changes:
+    - commit: 4fb24b8446d08e4bdf64bc5e9b55d4c7ac7c895e
+      note: 'feat: route native alerts and client notices through public host contracts'
+      author:
+        name: Dj Gilcrease
+        email: digitalxero@gmail.com
+      committer:
+        name: Dj Gilcrease
+        email: digitalxero@gmail.com
+      conventional_commit:
+        category: feat
+        scope: ""
+        description: route native alerts and client notices through public host contracts
+        body: ""
+        footer: []
+        major: false
+        minor: true
+        patch: false
+    - commit: e06e79eec3c7d25ed51add762c0229aa91278c13
+      note: 'feat: add explicit notification routing plugin'
+      author:
+        name: Dj Gilcrease
+        email: digitalxero@gmail.com
+      committer:
+        name: Dj Gilcrease
+        email: digitalxero@gmail.com
+      conventional_commit:
+        category: feat
+        scope: ""
+        description: add explicit notification routing plugin
+        body: ""
+        footer: []
+        major: false
+        minor: true
+        patch: false
