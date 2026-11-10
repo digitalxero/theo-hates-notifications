@@ -1,1 +1,1 @@
-T3 Tools plugin SDK, MIT. Vendored from djgilcrease/t3code shared plugin-host development, including notification-journal and notification-routing contracts. Final release must pin the published host commit here. See LICENSE.
+T3 Tools plugin SDK, MIT. Vendored from https://github.com/djgilcrease/t3code/tree/66747764ea3f6a7ab5b61a6afb93f80f3cb331a2/packages/plugin-sdk (shared plugin-host PoC). Source and prebuilt SDK include the public notification journal, routing, target discovery and native delivery contracts. See LICENSE.

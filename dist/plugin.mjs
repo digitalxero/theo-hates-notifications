@@ -13573,6 +13573,25 @@ const PluginField = Struct({
 const PluginBlock = Union([
 	Struct({
 		id: PluginLocalId,
+		kind: Literal("environment"),
+		environmentId: Label,
+		label: Label,
+		url: Text,
+		state: Literals([
+			"starting",
+			"running",
+			"stopping",
+			"stopped",
+			"deleting",
+			"deleted",
+			"error"
+		]),
+		connect: PluginAction,
+		threadId: optionalKey(Label),
+		launchRequestId: optionalKey(Label)
+	}),
+	Struct({
+		id: PluginLocalId,
 		kind: Literal("text"),
 		text: Text
 	}),
@@ -13632,7 +13651,9 @@ Struct({
 		"settings",
 		"settings-page",
 		"usage",
-		"thread-details"
+		"thread-details",
+		"managed-environments",
+		"environment-launcher"
 	]),
 	permission: PluginPermission
 });
@@ -13648,6 +13669,10 @@ Struct({
 	$t3: Literal("secret"),
 	label: Label,
 	value: Text
+});
+Struct({
+	$t3: Literal("environment-launch"),
+	requestId: Label
 });
 Struct({
 	$t3: Literal("notice"),
@@ -13713,7 +13738,11 @@ Struct({
 	active: Boolean$1,
 	waiting: Boolean$1,
 	closed: Boolean$1,
-	lastActivity: Number$1
+	lastActivity: Number$1,
+	threads: optionalKey(ArraySchema(Struct({
+		threadId: Label,
+		subagent: Boolean$1
+	})).check(isMaxLength(1e4)))
 });
 Struct({
 	environmentId: Label,
@@ -13772,19 +13801,26 @@ const PluginNotificationKind = Literals([
 	"approval",
 	"failure",
 	"usage-limit",
-	"guest-request"
+	"guest-request",
+	"activity",
+	"clear",
+	"notice",
+	"review-ready",
+	"review-failure"
 ]);
 const PluginNotification = Struct({
 	id: Label,
 	sequence: Int,
 	kind: PluginNotificationKind,
-	threadId: Label,
-	sourceThreadId: optionalKey(Label),
-	targetEnvironmentId: optionalKey(Label),
-	projectId: Label,
+	threadId: String$1,
+	sourceThreadId: optionalKey(String$1),
+	targetEnvironmentId: optionalKey(String$1),
+	projectId: String$1,
 	provider: Label,
 	title: Label,
-	occurredAt: String$1
+	occurredAt: String$1,
+	description: optionalKey(Text),
+	path: optionalKey(Text)
 });
 Struct({ after: NullOr(Int.check(isGreaterThanOrEqualTo(0))) });
 Struct({
@@ -13794,16 +13830,30 @@ Struct({
 const PluginNotificationRoutes = ArraySchema(Struct({
 	id: PluginLocalId,
 	events: ArraySchema(PluginNotificationKind).check(isMaxLength(20)),
-	projects: ArraySchema(Label).check(isMaxLength(100)),
-	providers: ArraySchema(Label).check(isMaxLength(100)),
+	projects: ArraySchema(String$1).check(isMaxLength(100)),
+	providers: ArraySchema(String$1).check(isMaxLength(100)),
 	inApp: Boolean$1,
 	mode: Literals([
+		"inherit",
 		"off",
 		"notifications",
 		"sound",
 		"notifications-and-sound"
-	])
+	]),
+	forwardCommand: optionalKey(PluginLocalId),
+	includeDescription: optionalKey(Boolean$1)
 })).check(isMaxLength(100));
+Struct({
+	projects: ArraySchema(Struct({
+		id: String$1,
+		label: Label
+	})).check(isMaxLength(99)),
+	providers: ArraySchema(Struct({
+		id: String$1,
+		label: Label
+	})).check(isMaxLength(99)),
+	truncated: Boolean$1
+});
 Int.check(isBetween({
 	minimum: 1e3,
 	maximum: 39e5
@@ -15456,14 +15506,25 @@ const kinds = [
 	"approval",
 	"failure",
 	"usage-limit",
-	"guest-request"
+	"guest-request",
+	"activity",
+	"clear",
+	"notice",
+	"review-ready",
+	"review-failure"
 ];
+const defaultKinds = kinds.filter((kind) => ![
+	"activity",
+	"clear",
+	"notice"
+].includes(kind));
 const transports = [
 	"slack",
 	"ntfy",
 	"webhook",
 	"discord",
-	"gotify"
+	"gotify",
+	"mobile"
 ];
 const empty = () => ({
 	version: 1,
@@ -15471,9 +15532,11 @@ const empty = () => ({
 	destinations: [],
 	deliveries: [],
 	clientRoutes: [],
-	appUrl: "https://app.t3.codes"
+	appUrl: "https://app.t3.codes",
+	noticesEnabled: false,
+	noticeDetails: false
 });
-const validId = (id) => /^[a-z][a-z0-9-]{0,63}$/.test(id);
+const validId = (id) => /^[a-z][a-z0-9-]{0,51}$/.test(id);
 function destination(input) {
 	if (typeof input !== "object" || input === null) throw new Error("Destination must be an object.");
 	const d = input;
@@ -15482,7 +15545,7 @@ function destination(input) {
 		"events",
 		"projects",
 		"providers"
-	]) if (!Array.isArray(d[field]) || d[field].length > 100 || d[field].some((x) => typeof x !== "string" || x.length > 200)) throw new Error("Invalid route filters.");
+	]) if (!Array.isArray(d[field]) || d[field].length > 100 || d[field].some((x) => typeof x !== "string" || x.length > 16384)) throw new Error("Invalid route filters.");
 	if (!d.events.length || d.events.some((x) => !kinds.includes(x))) throw new Error("Select at least one supported event.");
 	return {
 		id: d.id,
@@ -15495,16 +15558,46 @@ function destination(input) {
 	};
 }
 function matches(d, event) {
-	return d.enabled && d.events.includes(event.kind) && (!d.projects.length || d.projects.includes(event.projectId)) && (!d.providers.length || d.providers.includes(event.provider));
+	return d.enabled && !(d.transport === "mobile" && [
+		"notice",
+		"review-ready",
+		"review-failure"
+	].includes(event.kind)) && d.events.includes(event.kind) && (!d.projects.length || d.projects.includes(event.projectId)) && (!d.providers.length || d.providers.includes(event.provider));
 }
 function endpoint(value) {
 	const url = new URL(value);
 	if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.hash) throw new Error("Use an HTTP(S) endpoint without URL user information or fragments.");
 	return url;
 }
+function endpointConfiguration(value) {
+	const parsed = value.trim().startsWith("{") ? JSON.parse(value) : {
+		url: value,
+		headers: {}
+	};
+	if (typeof parsed !== "object" || parsed === null || !("url" in parsed) || typeof parsed.url !== "string") throw new Error("Invalid endpoint configuration.");
+	const supplied = "headers" in parsed ? parsed.headers : {};
+	if (typeof supplied !== "object" || supplied === null || Array.isArray(supplied)) throw new Error("Headers must be a JSON object.");
+	const headers = {};
+	for (const [key, value] of Object.entries(supplied)) {
+		if (typeof value !== "string" || value.length > 8192 || [
+			"host",
+			"content-length",
+			"connection",
+			"transfer-encoding",
+			"idempotency-key"
+		].includes(key.toLowerCase())) throw new Error("Invalid custom header.");
+		headers[key] = value;
+	}
+	if (Object.keys(headers).length > 20) throw new Error("Too many custom headers.");
+	new Headers(headers);
+	return {
+		url: endpoint(parsed.url).href,
+		headers
+	};
+}
 function request(d, e, target, id, link) {
 	const url = endpoint(target);
-	const title = `${e.kind}: ${e.title}`;
+	const title = `${e.kind}: ${e.title}` + (e.description ? `\n${e.description}` : "");
 	let body = {
 		id,
 		event: e,
@@ -15520,7 +15613,7 @@ function request(d, e, target, id, link) {
 			break;
 		case "discord":
 			body = {
-				content: title + (link ? `\n${link}` : ""),
+				content: title.slice(0, Math.max(0, 2e3 - (link ? link.length + 1 : 0))) + (link ? `\n${link}` : ""),
 				allowed_mentions: { parse: [] }
 			};
 			break;
@@ -15555,6 +15648,8 @@ async function createEngine(directory, dependencies) {
 		if (parsed.version !== 1 || !Array.isArray(parsed.deliveries) || parsed.deliveries.length > 1e4 || parsed.cursor !== null && (!Number.isSafeInteger(parsed.cursor) || parsed.cursor < 0)) throw new Error("Invalid routing state.");
 		parsed.destinations = parsed.destinations.map(destination);
 		parsed.clientRoutes ??= [];
+		parsed.noticesEnabled ??= false;
+		parsed.noticeDetails ??= false;
 		parsed.appUrl ??= "https://app.t3.codes";
 		state = parsed;
 	} catch (error) {
@@ -15569,10 +15664,22 @@ async function createEngine(directory, dependencies) {
 		return result;
 	};
 	const persist = async (next) => {
+		const pending = next.deliveries.filter((d) => d.status === "pending");
+		if (Buffer.byteLength(JSON.stringify(pending)) > 4194304) throw new Error("Delivery queue storage limit reached; cursor retained.");
+		const history = [];
+		let historyBytes = 0;
+		for (const entry of next.deliveries.filter((d) => d.status !== "pending").reverse()) {
+			historyBytes += Buffer.byteLength(JSON.stringify(entry));
+			if (history.length >= 1e3 || historyBytes > 1048576) break;
+			history.push(entry);
+		}
+		next.deliveries = [...history.reverse(), ...pending];
+		const encoded = JSON.stringify(next);
+		if (Buffer.byteLength(encoded) > 8388608) throw new Error("Routing state storage limit reached.");
 		const temp = `${path}.${randomUUID()}.tmp`;
 		const file = await open(temp, "wx", 384);
 		try {
-			await file.writeFile(JSON.stringify(next));
+			await file.writeFile(encoded);
 			await file.sync();
 		} finally {
 			await file.close();
@@ -15587,6 +15694,27 @@ async function createEngine(directory, dependencies) {
 	});
 	return {
 		state: () => structuredClone(state),
+		configureNotices: (enabled, details) => update((next) => {
+			next.noticesEnabled = enabled;
+			next.noticeDetails = details;
+		}),
+		enqueueNotice: (event) => update((next) => {
+			if (!next.noticesEnabled) return;
+			const seen = new Set(next.deliveries.map((d) => d.id));
+			for (const d of next.destinations.filter((d) => matches(d, event))) {
+				const id = encodeURIComponent(`${dependencies.environmentId ?? "local"}:${event.id}:${d.id}`);
+				if (seen.has(id)) continue;
+				if (next.deliveries.filter((d) => d.status === "pending").length >= 9e3) throw new Error("Delivery queue full.");
+				next.deliveries.push({
+					id,
+					destination: d,
+					event,
+					status: "pending",
+					attempts: 0,
+					nextAttempt: 0
+				});
+			}
+		}),
 		setAppUrl: (value) => update((next) => {
 			const url = endpoint(value);
 			if (url.search) throw new Error("The client URL must not contain credentials or query parameters.");
@@ -15614,7 +15742,7 @@ async function createEngine(directory, dependencies) {
 			for (const e of batch.events) {
 				if (next.cursor !== null && e.sequence <= next.cursor) continue;
 				for (const d of next.destinations.filter((d) => matches(d, e))) {
-					const id = `${e.id}:${d.id}`;
+					const id = encodeURIComponent(`${dependencies.environmentId ?? "local"}:${e.id}:${d.id}`);
 					if (seen.has(id)) continue;
 					next.deliveries.push({
 						id,
@@ -15641,7 +15769,7 @@ async function createEngine(directory, dependencies) {
 			delete d.result;
 		}),
 		drain: (signal) => serial(async () => {
-			for (const delivery of state.deliveries.filter((d) => d.status === "pending" && d.nextAttempt <= now()).slice(0, 1)) {
+			for (const delivery of state.deliveries.filter((d) => d.status === "pending" && d.nextAttempt <= now() && state.destinations.some((route) => route.id === d.destination.id && route.enabled)).slice(0, 1)) {
 				if (signal?.aborted) return;
 				if (!state.destinations.some((d) => d.id === delivery.destination.id && d.enabled)) continue;
 				const next = structuredClone(state);
@@ -15657,21 +15785,43 @@ async function createEngine(directory, dependencies) {
 				await persist(next);
 				let result;
 				let retryable = true;
+				let retryAfter = record.nextAttempt;
 				try {
-					const target = await dependencies.secret(`destination-${record.destination.id}`);
-					if (!target) {
-						result = "Endpoint secret missing";
-						retryable = false;
+					if (record.destination.transport === "mobile") {
+						if (!dependencies.native) {
+							result = "Native host delivery unavailable";
+							retryable = false;
+						} else {
+							await dependencies.native(record.event.sourceThreadId ?? record.event.threadId, signal ? AbortSignal.any([signal, AbortSignal.timeout(1e4)]) : AbortSignal.timeout(1e4));
+							result = "Native refresh requested";
+						}
 					} else {
-						const link = dependencies.environmentId ? `${state.appUrl}/${encodeURIComponent(record.event.targetEnvironmentId ?? dependencies.environmentId)}/${encodeURIComponent(record.event.threadId)}` : void 0;
-						const req = request(record.destination, record.event, target, record.id, link);
-						const response = await send(req.url, {
-							...req.init,
-							signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(1e4)]) : AbortSignal.timeout(1e4)
-						});
-						await response.body?.cancel();
-						result = response.ok ? "Delivered" : `HTTP ${response.status}`;
-						retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+						const target = await dependencies.secret(`destination-${record.destination.id}`);
+						if (!target) {
+							result = "Endpoint secret missing";
+							retryable = false;
+						} else {
+							const path = record.event.path;
+							const link = path?.startsWith("/") && !path.startsWith("//") && !path.includes("\\") && !path.includes("#") ? new URL(path, state.appUrl).href : dependencies.environmentId ? `${state.appUrl}/${encodeURIComponent(record.event.targetEnvironmentId ?? dependencies.environmentId)}/${encodeURIComponent(record.event.threadId)}` : void 0;
+							const configuration = endpointConfiguration(target);
+							const req = request(record.destination, record.event, configuration.url, record.id, link);
+							const response = await send(req.url, {
+								...req.init,
+								headers: {
+									...req.init.headers,
+									...configuration.headers
+								},
+								signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(1e4)]) : AbortSignal.timeout(1e4)
+							});
+							await response.body?.cancel();
+							result = response.ok ? "Delivered" : `HTTP ${response.status}`;
+							retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+							const header = response.headers.get("retry-after");
+							if (header !== null) {
+								const delay = /^\d+$/.test(header) ? Number(header) * 1e3 : Date.parse(header) - now();
+								if (Number.isFinite(delay)) retryAfter = Math.max(retryAfter, now() + Math.min(864e5, Math.max(0, delay)));
+							}
+						}
 					}
 				} catch {
 					result = "Transport failed or timed out";
@@ -15680,7 +15830,8 @@ async function createEngine(directory, dependencies) {
 				const completed = structuredClone(state);
 				const entry = completed.deliveries.find((d) => d.id === record.id);
 				entry.result = result;
-				if (result === "Delivered") entry.status = "delivered";
+				entry.nextAttempt = retryAfter;
+				if (result === "Delivered" || result === "Native refresh requested") entry.status = "delivered";
 				else if (!retryable || entry.attempts >= 5) entry.status = "failed";
 				await persist(completed);
 			}
@@ -15688,6 +15839,7 @@ async function createEngine(directory, dependencies) {
 		test: async (id, signal) => {
 			const d = state.destinations.find((d) => d.id === id);
 			if (!d) throw new Error("Unknown destination.");
+			if (d.transport === "mobile") return "Mobile routing uses this environment's existing T3 Connect link and device permissions. Trigger a thread event to test; no synthetic push was sent.";
 			const target = await dependencies.secret(`destination-${id}`);
 			if (!target) throw new Error("Save an endpoint secret first.");
 			const e = {
@@ -15700,10 +15852,15 @@ async function createEngine(directory, dependencies) {
 				title: "Synthetic notification test",
 				occurredAt: new Date(now()).toISOString()
 			};
-			const req = request(d, e, target, e.id);
+			const configuration = endpointConfiguration(target);
+			const req = request(d, e, configuration.url, e.id);
 			try {
 				const response = await send(req.url, {
 					...req.init,
+					headers: {
+						...req.init.headers,
+						...configuration.headers
+					},
 					signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(1e4)]) : AbortSignal.timeout(1e4)
 				});
 				await response.body?.cancel();
@@ -15722,7 +15879,7 @@ const call = (operation, run) => tryPromise({
 		cause
 	})
 });
-function view(engine, failure) {
+function view(engine, failure, targets) {
 	const state = engine.state();
 	return {
 		title: "Theo Hates Notifications",
@@ -15730,12 +15887,12 @@ function view(engine, failure) {
 			{
 				id: "intro",
 				kind: "text",
-				text: "Route committed thread notifications from this environment to external destinations. Routing starts empty. Builtin device notifications and their preferences continue independently. Adding an external route does not enable or disable any builtin channel. Credentials and endpoint URLs are write-only host secrets. Tests send synthetic data to the selected destination."
+				text: "Choose where alerts go. Builtin notifications keep working until you explicitly configure client routing. Endpoint URLs stay in this environment's secrets."
 			},
 			{
 				id: "status",
 				kind: "text",
-				text: failure ?? `Listening. Journal cursor: ${state.cursor ?? "initializing"}. Up to five delivery attempts; failed deliveries need explicit retry. Endpoints may receive a duplicate after an interrupted request; webhooks receive an Idempotency-Key.`
+				text: failure ?? `${state.deliveries.filter((d) => d.status === "pending").length} queued, ${state.deliveries.filter((d) => d.status === "failed").length} failed. Delivery retries up to five times; failed rows can be retried manually.${targets.truncated ? " Some filter choices are omitted; use Advanced routing for other IDs." : ""}`
 			},
 			{
 				id: "destinations",
@@ -15756,8 +15913,8 @@ function view(engine, failure) {
 						d.name,
 						d.transport,
 						d.events.join(", "),
-						d.projects.join(", ") || "All",
-						d.providers.join(", ") || "All",
+						d.projects.map((id) => targets.projects.find((p) => p.id === id)?.label ?? id).join(", ") || "All",
+						d.providers.map((id) => targets.providers.find((p) => p.id === id)?.label ?? id).join(", ") || "All",
 						String(d.enabled)
 					],
 					actions: [
@@ -15816,21 +15973,65 @@ function view(engine, failure) {
 					},
 					{
 						name: "events",
-						label: "Event names, separated by commas",
-						kind: "text",
-						value: kinds.join(",")
+						label: "Events",
+						kind: "select",
+						value: defaultKinds.join(","),
+						options: [
+							{
+								label: "Thread alerts and reviews",
+								value: defaultKinds.join(",")
+							},
+							{
+								label: "Needs attention",
+								value: "input,approval,failure,usage-limit,guest-request"
+							},
+							{
+								label: "Completions",
+								value: "completion"
+							},
+							{
+								label: "Review guides",
+								value: "review-ready,review-failure"
+							},
+							{
+								label: "Client notices",
+								value: "notice"
+							},
+							{
+								label: "Mobile alerts and live activity",
+								value: "completion,input,approval,failure,usage-limit,guest-request,activity,clear"
+							},
+							{
+								label: "All notification types",
+								value: kinds.join(",")
+							}
+						]
 					},
 					{
 						name: "projects",
-						label: "Project ids, separated by commas (empty means all)",
-						kind: "text",
-						value: ""
+						label: "Project",
+						kind: "select",
+						value: "",
+						options: [{
+							label: "All projects",
+							value: ""
+						}, ...targets.projects.map((p) => ({
+							label: p.label,
+							value: p.id
+						}))]
 					},
 					{
 						name: "providers",
-						label: "Provider instance ids, separated by commas (empty means all)",
-						kind: "text",
-						value: ""
+						label: "Provider / account",
+						kind: "select",
+						value: "",
+						options: [{
+							label: "All providers",
+							value: ""
+						}, ...targets.providers.map((p) => ({
+							label: p.label,
+							value: p.id
+						}))]
 					},
 					{
 						name: "enabled",
@@ -15841,22 +16042,35 @@ function view(engine, failure) {
 				]
 			},
 			{
+				id: "mobile",
+				kind: "text",
+				text: "Mobile destinations use T3's native T3 Connect delivery adapter, not an endpoint secret. Existing link/device preferences, push permissions, focus suppression, sounds, grouping, expiry and live activities remain authoritative. Host dispatch is not proof that a device displayed a notification."
+			},
+			{
 				id: "secret",
 				kind: "form",
 				label: "Save endpoint secret",
 				command: "secret",
 				input: {},
-				fields: [{
-					name: "id",
-					label: "Destination id",
-					kind: "text",
-					required: true
-				}, {
-					name: "endpoint",
-					label: "Full endpoint URL (Slack/Discord webhook, ntfy topic, Gotify message URL with token, or generic webhook)",
-					kind: "password",
-					required: true
-				}]
+				fields: [
+					{
+						name: "id",
+						label: "Destination id",
+						kind: "text",
+						required: true
+					},
+					{
+						name: "endpoint",
+						label: "Full endpoint URL (write only)",
+						kind: "password",
+						required: true
+					},
+					{
+						name: "headers",
+						label: "HTTP headers as JSON, such as {\"Authorization\":\"Bearer ...\"} (optional, write only)",
+						kind: "password"
+					}
+				]
 			},
 			{
 				id: "deliveries",
@@ -15886,6 +16100,24 @@ function view(engine, failure) {
 						input: { id: d.id }
 					}] : []
 				}))
+			},
+			{
+				id: "notice-routing",
+				kind: "form",
+				label: "Route client notices to this environment",
+				command: "notice-routing",
+				input: {},
+				fields: [{
+					name: "enabled",
+					label: "Forward client notices (destination must also include the notice event)",
+					kind: "boolean",
+					value: state.noticesEnabled
+				}, {
+					name: "details",
+					label: "Include notice descriptions, which may contain private project or error text",
+					kind: "boolean",
+					value: state.noticeDetails
+				}]
 			},
 			{
 				id: "client-url",
@@ -15956,9 +16188,42 @@ function view(engine, failure) {
 				]
 			},
 			{
+				id: "advanced-routing",
+				kind: "form",
+				label: "Advanced routing for an existing destination",
+				command: "advanced-routing",
+				input: {},
+				fields: [
+					{
+						name: "id",
+						label: "Destination id",
+						kind: "text",
+						required: true
+					},
+					{
+						name: "events",
+						label: "Event names (comma separated)",
+						kind: "text",
+						value: defaultKinds.join(",")
+					},
+					{
+						name: "projects",
+						label: "Project ids (comma separated; empty means all)",
+						kind: "text",
+						value: ""
+					},
+					{
+						name: "providers",
+						label: "Provider instance ids (comma separated; empty means all)",
+						kind: "text",
+						value: ""
+					}
+				]
+			},
+			{
 				id: "limits",
 				kind: "text",
-				text: "Web/desktop client routing reuses the existing sound, badge, native alert and focus/tag behavior. Mobile push, live activities and operational UI toasts remain builtin. This page does not claim replacement parity for those channels. Route filters use exact project and provider instance ids on the owning environment. Pausing retains queued deliveries; removing discards pending deliveries. Removal of the plugin deletes its local configuration according to host lifecycle policy."
+				text: "Web/desktop client routing reuses the existing sound, badge, native alert and focus/tag behavior. Mobile destinations refresh the existing native adapter; builtin delivery remains active and deduplicates the same committed state. Client notice forwarding is opt-in; interactive controls retain their local actions. Native iOS, relay push and all platform behavior require separate verification. Route filters use exact project and provider instance ids on the owning environment. Pausing retains queued deliveries; removing discards pending deliveries. Removal of the plugin deletes its local configuration according to host lifecycle policy."
 			}
 		]
 	};
@@ -15967,11 +16232,17 @@ const list = (value) => Array.isArray(value) ? value.map(String) : String(value 
 var plugin_default = {
 	apiVersion: 1,
 	id: "theo-hates-notifications",
-	name: "Theo Hates Notifications",
+	name: "theo-hates-notifications",
 	version: "0.1.0",
 	description: "Explicit notification routing to Slack, ntfy, webhooks, Discord and Gotify.",
 	activate: (context) => gen(function* () {
-		if (!context.capabilities?.includes("notification-journal") || !context.notifications) return yield* new PluginError({
+		if (![
+			"notification-journal",
+			"notification-routing",
+			"native-notification-delivery",
+			"notification-targets",
+			"settings-pages"
+		].every((capability) => context.capabilities?.includes(capability)) || !context.notifications) return yield* new PluginError({
 			operation: "notification-host-required",
 			cause: null
 		});
@@ -15980,13 +16251,18 @@ var plugin_default = {
 		const environmentId = context.environmentId ? yield* context.environmentId : void 0;
 		const engine = yield* call("activate", () => createEngine(context.dataDirectory, {
 			environmentId,
+			native: (threadId, signal) => runPromise(notifications.refreshNative(threadId), { signal }),
 			secret: (key) => runPromise(context.secrets.get(key))
 		}));
+		if (engine.state().cursor === null) {
+			const baseline = yield* notifications.read({ after: null });
+			yield* call("baseline", () => engine.ingest(baseline));
+		}
 		let failure = null;
 		yield* gen(function* () {
 			const previous = engine.state();
 			const batch = yield* notifications.read({ after: engine.state().cursor });
-			yield* call("ingest", () => engine.ingest(batch));
+			yield* call("ingest", () => engine.ingest(batch)).pipe(catch_((error) => call("deliver", (signal) => engine.drain(signal)).pipe(andThen(fail$1(error)))));
 			yield* call("deliver", (signal) => engine.drain(signal));
 			failure = null;
 			if (batch.events.length || JSON.stringify(previous.deliveries) !== JSON.stringify(engine.state().deliveries)) yield* publish(changes, void 0);
@@ -16003,15 +16279,67 @@ var plugin_default = {
 		});
 		return {
 			changes: fromPubSub(changes),
-			notificationRoutes: () => sync(() => engine.state().clientRoutes),
+			notificationRoutes: () => sync(() => {
+				const state = engine.state();
+				if (!state.noticesEnabled) return state.clientRoutes;
+				const forward = {
+					forwardCommand: "client-notice",
+					includeDescription: state.noticeDetails
+				};
+				const clientKinds = [
+					"notice",
+					"review-ready",
+					"review-failure"
+				];
+				const routes = state.clientRoutes.map((route) => route.events.some((kind) => clientKinds.includes(kind)) ? {
+					...route,
+					...forward
+				} : route);
+				for (const kind of clientKinds) if (!routes.some((route) => route.events.includes(kind))) routes.push({
+					id: kind,
+					events: [kind],
+					projects: [],
+					providers: [],
+					inApp: true,
+					mode: kind === "notice" ? "off" : "inherit",
+					...forward
+				});
+				return routes;
+			}),
 			views: [{
 				id: "settings",
 				title: "Theo Hates Notifications",
 				location: "settings-page",
 				permission: "settings:write",
-				read: () => sync(() => view(engine, failure))
+				read: () => notifications.targets.pipe(map((targets) => view(engine, failure, targets)))
 			}],
 			commands: [
+				command("notice-routing", "Configure explicit notice forwarding", (input) => call("notice-routing", async () => {
+					await engine.configureNotices(input.enabled === true, input.details === true);
+					return "Notice forwarding saved. Interactive and progress notices retain their in-app actions.";
+				})),
+				command("client-notice", "Queue a client-origin notice", (input) => call("client-notice", async () => {
+					const state = engine.state();
+					if (!state.noticesEnabled) return "Notice forwarding is disabled.";
+					const event = decodeUnknownSync(PluginNotification)({
+						id: String(input.id),
+						sequence: -1,
+						kind: typeof input.kind === "string" && [
+							"notice",
+							"review-ready",
+							"review-failure"
+						].includes(input.kind) ? input.kind : "notice",
+						threadId: "client",
+						projectId: typeof input.projectId === "string" ? input.projectId : "client",
+						provider: typeof input.provider === "string" ? input.provider : "client",
+						title: String(input.title),
+						occurredAt: (/* @__PURE__ */ new Date()).toISOString(),
+						...state.noticeDetails && typeof input.description === "string" ? { description: input.description } : {},
+						...typeof input.path === "string" ? { path: input.path } : {}
+					});
+					await engine.enqueueNotice(event);
+					return "Notice queued.";
+				})),
 				command("client-url", "Save client URL for actionable links", (input) => call("client-url", async () => {
 					await engine.setAppUrl(String(input.url));
 					return "Client URL saved. The receiving browser must already be paired with the environment.";
@@ -16028,6 +16356,17 @@ var plugin_default = {
 					await engine.setClientRoutes(routes);
 					return "Client routing saved. Existing device permission and focus rules still apply.";
 				})),
+				command("advanced-routing", "Update advanced route filters", (input) => call("advanced-routing", async () => {
+					const current = engine.state().destinations.find((d) => d.id === input.id);
+					if (!current) throw new Error("Unknown destination.");
+					await engine.configure({
+						...current,
+						events: list(input.events),
+						projects: list(input.projects),
+						providers: list(input.providers)
+					});
+					return "Route filters updated.";
+				})),
 				command("configure", "Save destination routing", (input) => call("configure", async () => {
 					await engine.configure({
 						...input,
@@ -16043,8 +16382,11 @@ var plugin_default = {
 						operation: "unknown-destination",
 						cause: null
 					});
-					const value = yield* call("endpoint", async () => endpoint(String(input.endpoint)).href);
-					yield* context.secrets.set(`destination-${id}`, value);
+					const value = yield* call("endpoint", async () => endpointConfiguration(JSON.stringify({
+						url: String(input.endpoint),
+						headers: typeof input.headers === "string" && input.headers.trim() ? JSON.parse(input.headers) : {}
+					})));
+					yield* context.secrets.set(`destination-${id}`, JSON.stringify(value));
 					return "Endpoint saved. The secret is never displayed.";
 				})),
 				command("test", "Send a synthetic destination test", (input) => call("test", (signal) => engine.test(String(input.id), signal))),

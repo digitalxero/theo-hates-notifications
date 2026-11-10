@@ -53,7 +53,27 @@ export const PluginField = Schema.Struct({
     options: Schema.optionalKey(Schema.Array(Schema.Struct({ label: Label, value: Label })).check(Schema.isMaxLength(100))),
     required: Schema.optionalKey(Schema.Boolean),
 });
+export const PluginManagedEnvironment = Schema.Struct({
+    id: PluginLocalId,
+    kind: Schema.Literal("environment"),
+    environmentId: Label,
+    label: Label,
+    url: Text,
+    state: Schema.Literals([
+        "starting",
+        "running",
+        "stopping",
+        "stopped",
+        "deleting",
+        "deleted",
+        "error",
+    ]),
+    connect: PluginAction,
+    threadId: Schema.optionalKey(Label),
+    launchRequestId: Schema.optionalKey(Label),
+});
 export const PluginBlock = Schema.Union([
+    PluginManagedEnvironment,
     Schema.Struct({ id: PluginLocalId, kind: Schema.Literal("text"), text: Text }),
     Schema.Struct({ id: PluginLocalId, kind: Schema.Literal("link"), label: Label, url: Text }),
     Schema.Struct({
@@ -110,7 +130,14 @@ export const PluginView = Schema.Struct({
 export const PluginViewDescriptor = Schema.Struct({
     id: PluginLocalId,
     title: Label,
-    location: Schema.Literals(["settings", "settings-page", "usage", "thread-details"]),
+    location: Schema.Literals([
+        "settings",
+        "settings-page",
+        "usage",
+        "thread-details",
+        "managed-environments",
+        "environment-launcher",
+    ]),
     permission: PluginPermission,
 });
 export const PluginCommandDescriptor = Schema.Struct({
@@ -126,6 +153,10 @@ export const PluginSecretResult = Schema.Struct({
     $t3: Schema.Literal("secret"),
     label: Label,
     value: Text,
+});
+export const PluginEnvironmentLaunchResult = Schema.Struct({
+    $t3: Schema.Literal("environment-launch"),
+    requestId: Label,
 });
 /** Ends a `thread-details` action with a message, and optionally a thread to open. */
 export const PluginNoticeResult = Schema.Struct({
@@ -196,6 +227,7 @@ export const PluginActivity = Schema.Struct({
     waiting: Schema.Boolean,
     closed: Schema.Boolean,
     lastActivity: Schema.Number,
+    threads: Schema.optionalKey(Schema.Array(Schema.Struct({ threadId: Label, subagent: Schema.Boolean })).check(Schema.isMaxLength(10_000))),
 });
 export const PluginThreadSummary = Schema.Struct({
     environmentId: Label,
@@ -255,18 +287,25 @@ export const PluginNotificationKind = Schema.Literals([
     "failure",
     "usage-limit",
     "guest-request",
+    "activity",
+    "clear",
+    "notice",
+    "review-ready",
+    "review-failure",
 ]);
 export const PluginNotification = Schema.Struct({
     id: Label,
     sequence: Schema.Int,
     kind: PluginNotificationKind,
-    threadId: Label,
-    sourceThreadId: Schema.optionalKey(Label),
-    targetEnvironmentId: Schema.optionalKey(Label),
-    projectId: Label,
+    threadId: Schema.String,
+    sourceThreadId: Schema.optionalKey(Schema.String),
+    targetEnvironmentId: Schema.optionalKey(Schema.String),
+    projectId: Schema.String,
     provider: Label,
     title: Label,
     occurredAt: Schema.String,
+    description: Schema.optionalKey(Text),
+    path: Schema.optionalKey(Text),
 });
 export const PluginNotificationRead = Schema.Struct({
     after: Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
@@ -278,12 +317,19 @@ export const PluginNotificationBatch = Schema.Struct({
 export const PluginNotificationRoute = Schema.Struct({
     id: PluginLocalId,
     events: Schema.Array(PluginNotificationKind).check(Schema.isMaxLength(20)),
-    projects: Schema.Array(Label).check(Schema.isMaxLength(100)),
-    providers: Schema.Array(Label).check(Schema.isMaxLength(100)),
+    projects: Schema.Array(Schema.String).check(Schema.isMaxLength(100)),
+    providers: Schema.Array(Schema.String).check(Schema.isMaxLength(100)),
     inApp: Schema.Boolean,
-    mode: Schema.Literals(["off", "notifications", "sound", "notifications-and-sound"]),
+    mode: Schema.Literals(["inherit", "off", "notifications", "sound", "notifications-and-sound"]),
+    forwardCommand: Schema.optionalKey(PluginLocalId),
+    includeDescription: Schema.optionalKey(Schema.Boolean),
 });
 export const PluginNotificationRoutes = Schema.Array(PluginNotificationRoute).check(Schema.isMaxLength(100));
+export const PluginNotificationTargets = Schema.Struct({
+    projects: Schema.Array(Schema.Struct({ id: Schema.String, label: Label })).check(Schema.isMaxLength(99)),
+    providers: Schema.Array(Schema.Struct({ id: Schema.String, label: Label })).check(Schema.isMaxLength(99)),
+    truncated: Schema.Boolean,
+});
 export const PluginHttpResponseTimeout = Schema.Int.check(Schema.isBetween({ minimum: 1_000, maximum: 3_900_000 }));
 export const PluginLifecycleEvent = Schema.Struct({
     type: Schema.Literals(["worktree.created", "worktree.removing", "worktree.removed"]),
