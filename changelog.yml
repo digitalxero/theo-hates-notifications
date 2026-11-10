@@ -1,7 +1,41 @@
 - semver: 0.1.1
-  date: 2026-11-10T09:42:44.392906862-08:00
+  date: 2026-11-10T09:49:11.298009417-08:00
   packager: DigitalXero
   changes:
+    - commit: c40175d6c769068c0ad5272c3247e15ae350d7e3
+      note: 'fix: keep invalid endpoint credentials out of validation diagnostics'
+      author:
+        name: Dj Gilcrease
+        email: digitalxero@gmail.com
+      committer:
+        name: Dj Gilcrease
+        email: digitalxero@gmail.com
+      conventional_commit:
+        category: fix
+        scope: ""
+        description: keep invalid endpoint credentials out of validation diagnostics
+        body: ""
+        footer: []
+        major: false
+        minor: false
+        patch: true
+    - commit: 3d6fc13da1c442b85a5f96cd2b1e3ce9097d1f16
+      note: 'chore(release): prepare v0.1.1 package metadata'
+      author:
+        name: Dj Gilcrease
+        email: digitalxero@gmail.com
+      committer:
+        name: Dj Gilcrease
+        email: digitalxero@gmail.com
+      conventional_commit:
+        category: chore
+        scope: release
+        description: prepare v0.1.1 package metadata
+        body: ""
+        footer: []
+        major: false
+        minor: false
+        patch: false
     - commit: fcafa7caec56fa92c6ad61064ea9368f161fb2c6
       note: 'fix: retain third-party attribution in every prebuilt bundle'
       author:
